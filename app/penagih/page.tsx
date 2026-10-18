@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { hapusSesi } from '@/lib/auth';
+import { hapusSesi, ambilToken, ambilUser } from '@/lib/auth';
 
 interface DetailPembayaran {
   uangDiterima: number;
@@ -73,23 +73,20 @@ export default function PenagihPage() {
     setTahunSekarang(sekarang.getFullYear());
     setTanggalHariIni(sekarang.toLocaleDateString('id-ID'));
 
-    const rawUser = localStorage.getItem('quennet_user');
-    if (rawUser) {
-      try {
-        const u = JSON.parse(rawUser);
-        // Bersihkan suffix jika nama user di database/localStorage sudah memiliki '(Penagih)' atau '(Admin)'
-        const namaBersih = (u.nama || 'Mas Nabil')
-          .replace(/\s*\((Penagih|Admin)\)/gi, '')
-          .trim();
-        setNamaUser(namaBersih || 'Mas Nabil');
-        setUserRole(u.role || 'PENAGIH');
-      } catch {}
+    const u = ambilUser();
+    if (u) {
+      // Bersihkan suffix jika nama user di database/localStorage sudah memiliki '(Penagih)' atau '(Admin)'
+      const namaBersih = (u.nama || 'Mas Nabil')
+        .replace(/\s*\((Penagih|Admin)\)/gi, '')
+        .trim();
+      setNamaUser(namaBersih || 'Mas Nabil');
+      setUserRole(u.role || 'PENAGIH');
     }
   }, []);
 
   // 2. Fetch data pelanggan dari backend
   const fetchPelanggan = async () => {
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     if (!token) {
       router.push('/login');
       return;
@@ -206,7 +203,7 @@ export default function PenagihPage() {
       return;
     }
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     setProsesId(p.id);
 
     try {
@@ -248,7 +245,7 @@ export default function PenagihPage() {
   const handleBatal = async (p: Pelanggan) => {
     if (!confirm(`Batalkan status lunas untuk ${p.nama}? Tagihan akan kembali menjadi belum bayar.`)) return;
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     setProsesId(p.id);
 
     try {
@@ -316,7 +313,7 @@ export default function PenagihPage() {
               </div>
               <div>
                 <div className="flex items-center space-x-2">
-                  <h1 className="text-2xl font-bold tracking-tight">Quennet Billing</h1>
+                  <h1 className="text-2xl font-bold tracking-tight">Quinnet Billing</h1>
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-sm border border-white/30">
                     Mode Lapangan
                   </span>
@@ -570,8 +567,8 @@ export default function PenagihPage() {
 
               // Pesan WA
               const pesanWa = p.isLunas
-                ? `Halo Bpk/Ibu ${p.nama}, terima kasih pembayaran iuran Wi-Fi Quennet sebesar Rp ${p.tagihan.toLocaleString('id-ID')} telah diterima oleh ${namaUser}. Status: LUNAS.`
-                : `Halo Bpk/Ibu ${p.nama}, menginformasikan tagihan Wi-Fi Quennet bulan ini sebesar Rp ${p.tagihan.toLocaleString('id-ID')}. Petugas kami (${namaUser}) sedang bertugas penagihan di wilayah RT Anda. Terima kasih.`;
+                ? `Halo Bpk/Ibu ${p.nama}, terima kasih pembayaran iuran Wi-Fi Quinnet sebesar Rp ${p.tagihan.toLocaleString('id-ID')} telah diterima oleh ${namaUser}. Status: LUNAS.`
+                : `Halo Bpk/Ibu ${p.nama}, menginformasikan tagihan Wi-Fi Quinnet bulan ini sebesar Rp ${p.tagihan.toLocaleString('id-ID')}. Petugas kami (${namaUser}) sedang bertugas penagihan di wilayah RT Anda. Terima kasih.`;
 
               return (
                 <article
@@ -868,7 +865,7 @@ export default function PenagihPage() {
             </button>
 
             <button
-              onClick={() => alert(`Kas Kolektor Sebesar Rp ${totalUangTerkumpul.toLocaleString('id-ID')} siap disetorkan ke Bendahara Admin Quennet.`)}
+              onClick={() => alert(`Kas Kolektor Sebesar Rp ${totalUangTerkumpul.toLocaleString('id-ID')} siap disetorkan ke Bendahara Admin Quinnet.`)}
               className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 text-xs font-bold rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm cursor-pointer"
               type="button"
             >
@@ -895,7 +892,7 @@ export default function PenagihPage() {
             {/* Area Struk Termal yang dicetak */}
             <div ref={strukRef} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-3 font-mono text-xs text-slate-800">
               <div className="border-b border-dashed border-slate-300 pb-2">
-                <h4 className="text-sm font-black tracking-wide uppercase">QUENNET WI-FI</h4>
+                <h4 className="text-sm font-black tracking-wide uppercase">QUINNET WI-FI</h4>
                 <p className="text-[10px] text-slate-500">Bukti Pembayaran Tagihan Internet</p>
               </div>
 
@@ -978,9 +975,9 @@ export default function PenagihPage() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Aplikasi Quennet Billing Mobile Kolektor • Terhubung Online</span>
+            <span>Aplikasi Quinnet Billing Mobile Kolektor • Terhubung Online</span>
           </div>
-          <div>© {tahunSekarang} Quennet Wi-Fi Sragen</div>
+          <div>© {tahunSekarang} Quinnet Wi-Fi Sragen</div>
         </div>
       </footer>
       {/* END: PageFooter */}

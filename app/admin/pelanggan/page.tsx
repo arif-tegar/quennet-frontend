@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import * as XLSX from 'xlsx';
+import { ambilToken } from '@/lib/auth';
 
 interface DetailPembayaran {
   uangDiterima?: number;
@@ -96,7 +97,7 @@ export default function PelangganPage() {
   const muatPelanggan = async () => {
     if (!bulanPilihan || !tahunPilihan) return;
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     if (!token) return;
 
     setLoading(true);
@@ -202,7 +203,7 @@ export default function PelangganPage() {
     e.preventDefault();
     setSimpanLoading(true);
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     const isEdit = sedangEditId !== null;
     const url = isEdit ? `${API_BASE_URL}/pelanggan/${sedangEditId}` : `${API_BASE_URL}/pelanggan`;
     const method = isEdit ? 'PUT' : 'POST';
@@ -238,7 +239,7 @@ export default function PelangganPage() {
   const handleHapus = async (p: Pelanggan) => {
     if (!confirm(`Hapus permanen ${p.nama}? Semua riwayat pembayarannya akan ikut terhapus.`)) return;
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     try {
       const res = await fetch(`${API_BASE_URL}/pelanggan/${p.id}`, {
         method: 'DELETE',
@@ -279,7 +280,7 @@ export default function PelangganPage() {
     const ws = XLSX.utils.json_to_sheet(dataExcel);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Pelanggan_${bulanPilihan}_${tahunPilihan}`);
-    XLSX.writeFile(wb, `Data_Pelanggan_Quennet_Bulan_${bulanPilihan}_${tahunPilihan}.xlsx`);
+    XLSX.writeFile(wb, `Data_Pelanggan_Quinnet_Bulan_${bulanPilihan}_${tahunPilihan}.xlsx`);
   };
 
   // Inisial Nama & Warna Avatar
@@ -510,8 +511,8 @@ export default function PelangganPage() {
 
                     // Pesan WhatsApp otomatis
                     const pesanWa = p.isLunas
-                      ? `Halo Bpk/Ibu ${p.nama}, terima kasih pembayaran tagihan Wi-Fi Quennet bulan ${bulanPilihan}/${tahunPilihan} sebesar Rp ${p.tagihan.toLocaleString('id-ID')} telah LUNAS.`
-                      : `Halo Bpk/Ibu ${p.nama}, mengingatkan tagihan Wi-Fi Quennet bulan ${bulanPilihan}/${tahunPilihan} sebesar Rp ${p.tagihan.toLocaleString('id-ID')} belum terbayar. Jatuh tempo tgl 20 ${namaBulanPendek}. Terima kasih.`;
+                      ? `Halo Bpk/Ibu ${p.nama}, terima kasih pembayaran tagihan Wi-Fi Quinnet bulan ${bulanPilihan}/${tahunPilihan} sebesar Rp ${p.tagihan.toLocaleString('id-ID')} telah LUNAS.`
+                      : `Halo Bpk/Ibu ${p.nama}, mengingatkan tagihan Wi-Fi Quinnet bulan ${bulanPilihan}/${tahunPilihan} sebesar Rp ${p.tagihan.toLocaleString('id-ID')} belum terbayar. Jatuh tempo tgl 20 ${namaBulanPendek}. Terima kasih.`;
 
                     return (
                       <tr key={p.id} className="hover:bg-blue-50/40 transition-colors group">

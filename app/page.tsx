@@ -7,8 +7,8 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('quennet_token');
-    const rawUser = localStorage.getItem('quennet_user');
+    const token = localStorage.getItem('quinnet_token') || localStorage.getItem('quennet_token');
+    const rawUser = localStorage.getItem('quinnet_user') || localStorage.getItem('quennet_user');
 
     if (!token || !rawUser) {
       router.replace('/login');
@@ -35,7 +35,7 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2 text-slate-600 text-sm font-semibold">
           <i className="fa-solid fa-circle-notch fa-spin text-blue-600"></i>
-          <span>Memuat Quennet Wi-Fi...</span>
+          <span>Memuat Quinnet Wi-Fi...</span>
         </div>
       </div>
     </div>

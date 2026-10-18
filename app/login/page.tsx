@@ -85,7 +85,7 @@ export default function LoginPage() {
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Quennet <span className="text-blue-600">Wi-Fi</span>
+              Quinnet <span className="text-blue-600">Wi-Fi</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
               Sistem Billing &amp; Penagihan RT/RW Net Sragen
@@ -194,7 +194,7 @@ export default function LoginPage() {
           <span className="font-semibold text-slate-600">Sistem Gateway MikroTik CCR Terkoneksi</span>
         </div>
         <p className="text-slate-400">
-          © 2026 Quennet Wi-Fi Sragen. Dikembangkan untuk kemudahan manajemen RT/RW Net.
+          © 2026 Quinnet Wi-Fi Sragen. Dikembangkan untuk kemudahan manajemen RT/RW Net.
         </p>
       </footer>
       {/* END: PageFooter */}

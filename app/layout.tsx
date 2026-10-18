@@ -8,8 +8,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Quennet Wi-Fi - Portal Admin Kelola Pelanggan",
-  description: "Aplikasi Billing & Manajemen Pelanggan RT/RW Net Quennet Wi-Fi",
+  title: "Quinnet Wi-Fi - Portal Admin Kelola Pelanggan",
+  description: "Aplikasi Billing & Manajemen Pelanggan RT/RW Net Quinnet Wi-Fi",
 };
 
 export default function RootLayout({

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { ambilToken } from '@/lib/auth';
 
 interface DetailPembayaran {
   uangDiterima?: number;
@@ -78,7 +79,7 @@ export default function LaporanPage() {
   const muatData = async () => {
     if (!bulanPilihan || !tahunPilihan) return;
 
-    const token = localStorage.getItem('quennet_token');
+    const token = ambilToken();
     if (!token) return;
 
     setLoading(true);
@@ -161,7 +162,7 @@ export default function LaporanPage() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dataRingkasan), 'Ringkasan Keuangan');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dataWarga), 'Daftar Tagihan Warga');
 
-    XLSX.writeFile(wb, `Laporan_Keuangan_Quennet_${bulanPilihan}_${tahunPilihan}.xlsx`);
+    XLSX.writeFile(wb, `Laporan_Keuangan_Quinnet_${bulanPilihan}_${tahunPilihan}.xlsx`);
   };
 
   return (
