@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
-import { ambilToken } from '@/lib/auth';
+import { ambilToken, hapusSesi } from '@/lib/auth';
+import { ambilCache, simpanCache, formatWaktuCache } from '@/lib/cache';
 
 interface DetailPembayaran {
   uangDiterima?: number;
@@ -41,7 +43,8 @@ interface LaporanKeuangan {
   };
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'https://quennet-backend-production.up.railway.app/api';
 
 const DAFTAR_BULAN = [
   { no: 1, nama: 'Bulan 01 (Januari)' },
@@ -59,6 +62,7 @@ const DAFTAR_BULAN = [
 ];
 
 export default function LaporanPage() {
+  const router = useRouter();
   const [bulanPilihan, setBulanPilihan] = useState<number>(10);
   const [tahunPilihan, setTahunPilihan] = useState<number>(2026);
   const [isReady, setIsReady] = useState(false);
@@ -66,6 +70,11 @@ export default function LaporanPage() {
   const [laporan, setLaporan] = useState<LaporanKeuangan | null>(null);
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Status Sinkronisasi Cache
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [terakhirUpdate, setTerakhirUpdate] = useState<number | null>(null);
+  const [dariCache, setDariCache] = useState(false);
 
   // 1. Inisialisasi tanggal lokal
   useEffect(() => {
@@ -75,33 +84,82 @@ export default function LaporanPage() {
     setIsReady(true);
   }, []);
 
-  // 2. Muat ringkasan laporan & list pelanggan periode aktif
-  const muatData = async () => {
+  // 2. Muat ringkasan laporan & list pelanggan periode aktif (Didukung Caching)
+  const muatData = async (forceRefresh = false) => {
     if (!bulanPilihan || !tahunPilihan) return;
 
     const token = ambilToken();
     if (!token) return;
 
-    setLoading(true);
+    const cacheKeyLap = `laporan_${bulanPilihan}_${tahunPilihan}`;
+    const cacheKeyPel = `pelanggan_${bulanPilihan}_${tahunPilihan}`;
+
+    // Cek cache jika bukan force refresh
+    if (!forceRefresh) {
+      const cacheLap = ambilCache<LaporanKeuangan>(cacheKeyLap);
+      const cachePel = ambilCache<Pelanggan[]>(cacheKeyPel);
+
+      if (cacheLap && cacheLap.data && cachePel && Array.isArray(cachePel.data)) {
+        setLaporan(cacheLap.data);
+        setPelangganList(cachePel.data);
+        setTerakhirUpdate(cacheLap.timestamp);
+        setDariCache(true);
+        setLoading(false);
+
+        // Jika umur cache masih segar (< 2 menit), tidak perlu background fetch
+        const umurCacheMs = Date.now() - cacheLap.timestamp;
+        if (umurCacheMs < 2 * 60 * 1000) {
+          return;
+        }
+      }
+    }
+
+    if (!laporan && !ambilCache(cacheKeyLap)) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+
     try {
+      const refreshParam = forceRefresh ? '&refresh=true' : '';
+
       const [resLap, resPel] = await Promise.all([
-        fetch(`${API_BASE_URL}/laporan?bulan=${bulanPilihan}&tahun=${tahunPilihan}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        fetch(`${API_BASE_URL}/laporan?bulan=${bulanPilihan}&tahun=${tahunPilihan}${refreshParam}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }),
-        fetch(`${API_BASE_URL}/pelanggan?bulan=${bulanPilihan}&tahun=${tahunPilihan}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        fetch(`${API_BASE_URL}/pelanggan?bulan=${bulanPilihan}&tahun=${tahunPilihan}${refreshParam}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }),
       ]);
+
+      if (!resLap.ok || !resPel.ok) {
+        if (resLap.status === 401 || resPel.status === 401 || resLap.status === 403 || resPel.status === 403) {
+          hapusSesi();
+          router.push('/login');
+          return;
+        }
+        throw new Error('Gagal mengambil data laporan dari server');
+      }
 
       const jsonLap = await resLap.json();
       const jsonPel = await resPel.json();
 
       setLaporan(jsonLap);
       setPelangganList(jsonPel.data || []);
+
+      simpanCache(cacheKeyLap, jsonLap);
+      simpanCache(cacheKeyPel, jsonPel.data || []);
+      setTerakhirUpdate(Date.now());
+      setDariCache(false);
     } catch (err) {
       console.error('Gagal memuat laporan keuangan:', err);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -182,8 +240,21 @@ export default function LaporanPage() {
                 </span>
                 <span className="text-xs text-blue-100 font-medium inline-flex items-center gap-1.5">
                   <span>Periode Bulan {bulanPilihan} / {tahunPilihan}</span>
-                  {loading && <i className="fa-solid fa-circle-notch fa-spin text-xs text-cyan-200"></i>}
+                  {isRefreshing && <i className="fa-solid fa-arrows-rotate fa-spin text-xs text-cyan-200"></i>}
                 </span>
+                {terakhirUpdate && (
+                  <span
+                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full backdrop-blur-sm border transition flex items-center gap-1.5 ${
+                      dariCache
+                        ? 'bg-amber-400/20 text-amber-200 border-amber-300/30'
+                        : 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30'
+                    }`}
+                    title={dariCache ? 'Data laporan dari cache cepat' : 'Data terhubung langsung'}
+                  >
+                    <i className="fa-solid fa-bolt text-[10px]"></i>
+                    <span>{dariCache ? 'Cache' : 'Tersinkron'} • {formatWaktuCache(terakhirUpdate)}</span>
+                  </span>
+                )}
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
                 Laporan Keuangan &amp; Arus Kas
@@ -223,6 +294,18 @@ export default function LaporanPage() {
                   title="Ubah tahun laporan"
                 />
               </div>
+
+              {/* Refresh / Segarkan Cache Button */}
+              <button
+                onClick={() => muatData(true)}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 active:scale-95 border border-white/25 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold text-white backdrop-blur-md shadow-sm transition cursor-pointer disabled:opacity-60"
+                title="Segarkan cache laporan dan ambil kalkulasi terbaru dari database"
+                type="button"
+              >
+                <i className={`fa-solid fa-arrows-rotate text-xs text-cyan-200 ${isRefreshing ? 'fa-spin' : ''}`}></i>
+                <span>{isRefreshing ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+              </button>
 
               {/* Ekspor Excel Button */}
               <button

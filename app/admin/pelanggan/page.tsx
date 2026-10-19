@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import * as XLSX from 'xlsx';
 import { ambilToken } from '@/lib/auth';
+import { ambilCache, simpanCache, hapusCache, formatWaktuCache } from '@/lib/cache';
 
 interface DetailPembayaran {
   uangDiterima?: number;
@@ -26,7 +27,8 @@ interface Pelanggan {
   nomorHp?: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'https://quennet-backend-production.up.railway.app/api';
 
 const DAFTAR_BULAN = [
   { no: 1, nama: 'Bulan 01 (Januari)', pendek: 'Jan' },
@@ -59,6 +61,11 @@ export default function PelangganPage() {
   const [modalBuka, setModalBuka] = useState(false);
   const [sedangEditId, setSedangEditId] = useState<number | null>(null);
   const [simpanLoading, setSimpanLoading] = useState(false);
+
+  // Status Sinkronisasi Cache
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [terakhirUpdate, setTerakhirUpdate] = useState<number | null>(null);
+  const [dariCache, setDariCache] = useState(false);
 
   // Filter Periode
   const [bulanPilihan, setBulanPilihan] = useState<number>(10);
@@ -93,28 +100,63 @@ export default function PelangganPage() {
     setIsReady(true);
   }, []);
 
-  // 2. Muat data pelanggan dari server
-  const muatPelanggan = async () => {
+  // 2. Muat data pelanggan dari server (Didukung Caching Cepat & Auto Refresh)
+  const muatPelanggan = async (forceRefresh = false) => {
     if (!bulanPilihan || !tahunPilihan) return;
 
     const token = ambilToken();
     if (!token) return;
 
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/pelanggan?bulan=${bulanPilihan}&tahun=${tahunPilihan}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+    const cacheKey = `pelanggan_${bulanPilihan}_${tahunPilihan}`;
+
+    // Cek cache client jika bukan force refresh
+    if (!forceRefresh) {
+      const cache = ambilCache<Pelanggan[]>(cacheKey);
+      if (cache && Array.isArray(cache.data) && cache.data.length > 0) {
+        setPelangganList(cache.data);
+        setTerakhirUpdate(cache.timestamp);
+        setDariCache(true);
+        setLoading(false);
+
+        // Jika cache masih sangat baru (< 2 menit), cukup gunakan cache tanpa fetch ulang otomatis
+        const umurCacheMs = Date.now() - cache.timestamp;
+        if (umurCacheMs < 2 * 60 * 1000) {
+          return;
         }
-      );
+      }
+    }
+
+    // Jika belum ada data sama sekali di memori/cache, tampilkan spinner utama
+    if (pelangganList.length === 0 && !ambilCache(cacheKey)) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const url = `${API_BASE_URL}/pelanggan?bulan=${bulanPilihan}&tahun=${tahunPilihan}${
+        forceRefresh ? '&refresh=true' : ''
+      }`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       const json = await res.json();
-      setPelangganList(json.data || []);
-      setHalamanAktif(1);
+      const data = json.data || [];
+
+      setPelangganList(data);
+      simpanCache(cacheKey, data);
+      setTerakhirUpdate(Date.now());
+      setDariCache(false);
+      if (forceRefresh) {
+        setHalamanAktif(1);
+      }
     } catch (err) {
       console.error('Gagal mengambil data pelanggan:', err);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -227,7 +269,10 @@ export default function PelangganPage() {
       if (!res.ok) throw new Error(json.pesan || 'Gagal menyimpan');
 
       setModalBuka(false);
-      muatPelanggan();
+      // Bersihkan cache agar data terbaru langsung tampil
+      hapusCache('pelanggan');
+      hapusCache('laporan');
+      muatPelanggan(true);
     } catch (err: any) {
       alert(err.message || 'Terjadi kesalahan saat menyimpan');
     } finally {
@@ -246,7 +291,10 @@ export default function PelangganPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        muatPelanggan();
+        // Bersihkan cache pelanggan & laporan setelah dihapus
+        hapusCache('pelanggan');
+        hapusCache('laporan');
+        muatPelanggan(true);
       } else {
         alert('Gagal menghapus data pelanggan');
       }
@@ -315,6 +363,19 @@ export default function PelangganPage() {
                 <span className="text-xs text-blue-100 font-medium">
                   {pelangganList.length} Warga Terdaftar Aktif
                 </span>
+                {terakhirUpdate && (
+                  <span
+                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full backdrop-blur-sm border transition flex items-center gap-1.5 ${
+                      dariCache
+                        ? 'bg-amber-400/20 text-amber-200 border-amber-300/30'
+                        : 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30'
+                    }`}
+                    title={dariCache ? 'Data diambil dari cache cepat' : 'Data terhubung langsung'}
+                  >
+                    <i className="fa-solid fa-bolt text-[10px]"></i>
+                    <span>{dariCache ? 'Cache' : 'Tersinkron'} • {formatWaktuCache(terakhirUpdate)}</span>
+                  </span>
+                )}
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
                 Kelola Pelanggan
@@ -354,6 +415,18 @@ export default function PelangganPage() {
                   title="Ubah tahun tagihan"
                 />
               </div>
+
+              {/* Refresh / Segarkan Cache Button */}
+              <button
+                onClick={() => muatPelanggan(true)}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 active:scale-95 border border-white/25 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold text-white backdrop-blur-md shadow-sm transition cursor-pointer disabled:opacity-60"
+                title="Segarkan cache dan ambil data terbaru langsung dari server"
+                type="button"
+              >
+                <i className={`fa-solid fa-arrows-rotate text-xs text-cyan-200 ${isRefreshing ? 'fa-spin' : ''}`}></i>
+                <span>{isRefreshing ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+              </button>
 
               {/* Add Customer Primary Button (Amber/Gold Style CTA) */}
               <button

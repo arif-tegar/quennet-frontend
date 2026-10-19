@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { hapusSesi, ambilToken, ambilUser } from '@/lib/auth';
+import { ambilCache, simpanCache, hapusCache, formatWaktuCache } from '@/lib/cache';
 
 interface DetailPembayaran {
   uangDiterima: number;
@@ -25,7 +26,8 @@ interface Pelanggan {
   nomorHp?: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'https://quennet-backend-production.up.railway.app/api';
 
 const AVATAR_COLORS = [
   'bg-blue-50 text-blue-600 border-blue-100',
@@ -42,6 +44,11 @@ export default function PenagihPage() {
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorPesan, setErrorPesan] = useState<string | null>(null);
+
+  // Status Sinkronisasi Cache
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [terakhirUpdate, setTerakhirUpdate] = useState<number | null>(null);
+  const [dariCache, setDariCache] = useState(false);
 
   // User State
   const [namaUser, setNamaUser] = useState<string>('Mas Nabil');
@@ -84,19 +91,44 @@ export default function PenagihPage() {
     }
   }, []);
 
-  // 2. Fetch data pelanggan dari backend
-  const fetchPelanggan = async () => {
+  // 2. Fetch data pelanggan dari backend (Didukung Caching Cepat & Auto Refresh)
+  const fetchPelanggan = async (forceRefresh = false) => {
     const token = ambilToken();
     if (!token) {
       router.push('/login');
       return;
     }
 
-    setLoading(true);
+    const cacheKey = 'penagih_pelanggan_list';
+
+    // Cek cache jika bukan force refresh
+    if (!forceRefresh) {
+      const cache = ambilCache<Pelanggan[]>(cacheKey);
+      if (cache && Array.isArray(cache.data) && cache.data.length > 0) {
+        setPelangganList(cache.data);
+        setTerakhirUpdate(cache.timestamp);
+        setDariCache(true);
+        setLoading(false);
+
+        // Jika cache masih sangat baru (< 2 menit), tidak perlu fetch background otomatis
+        const umurCacheMs = Date.now() - cache.timestamp;
+        if (umurCacheMs < 2 * 60 * 1000) {
+          return;
+        }
+      }
+    }
+
+    // Jika belum ada data sama sekali di memori/cache, tampilkan loading utama
+    if (pelangganList.length === 0 && !ambilCache(cacheKey)) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setErrorPesan(null);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/pelanggan`, {
+      const url = `${API_BASE_URL}/pelanggan${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -113,11 +145,16 @@ export default function PenagihPage() {
         throw new Error(json.pesan || 'Gagal memuat data pelanggan');
       }
 
-      setPelangganList(json.data || []);
+      const data = json.data || [];
+      setPelangganList(data);
+      simpanCache(cacheKey, data);
+      setTerakhirUpdate(Date.now());
+      setDariCache(false);
     } catch (err: any) {
       setErrorPesan(err.message || 'Terjadi kesalahan jaringan');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -233,7 +270,12 @@ export default function PenagihPage() {
       });
       setTerpilihBayarId(null);
 
-      await fetchPelanggan();
+      // Bersihkan cache agar status lunas ter-update
+      hapusCache('penagih');
+      hapusCache('pelanggan');
+      hapusCache('laporan');
+
+      await fetchPelanggan(true);
     } catch (err: any) {
       alert(err.message || 'Terjadi kesalahan sistem');
     } finally {
@@ -266,7 +308,12 @@ export default function PenagihPage() {
         throw new Error(json.pesan || 'Gagal membatalkan status pembayaran');
       }
 
-      await fetchPelanggan();
+      // Bersihkan cache setelah pembatalan bayar
+      hapusCache('penagih');
+      hapusCache('pelanggan');
+      hapusCache('laporan');
+
+      await fetchPelanggan(true);
     } catch (err: any) {
       alert(err.message || 'Terjadi kesalahan jaringan');
     } finally {
@@ -317,6 +364,19 @@ export default function PenagihPage() {
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-sm border border-white/30">
                     Mode Lapangan
                   </span>
+                  {terakhirUpdate && (
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full backdrop-blur-sm border transition flex items-center gap-1.5 ${
+                        dariCache
+                          ? 'bg-amber-400/20 text-amber-200 border-amber-300/30'
+                          : 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30'
+                      }`}
+                      title={dariCache ? 'Data instan dari cache' : 'Data terhubung langsung'}
+                    >
+                      <i className="fa-solid fa-bolt text-[9px]"></i>
+                      <span>{dariCache ? 'Cache' : 'Tersinkron'} • {formatWaktuCache(terakhirUpdate)}</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-blue-100 font-medium mt-0.5">
                   Petugas: <span className="font-bold text-white">{namaUser}</span>{' '}
@@ -340,13 +400,14 @@ export default function PenagihPage() {
               )}
 
               <button
-                onClick={fetchPelanggan}
-                className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/25 transition backdrop-blur-md"
-                title="Segarkan data tagihan"
+                onClick={() => fetchPelanggan(true)}
+                disabled={isRefreshing}
+                className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/25 transition backdrop-blur-md cursor-pointer disabled:opacity-60"
+                title="Segarkan cache dan ambil data terbaru langsung dari server"
                 type="button"
               >
-                <i className={`fa-solid fa-rotate-right text-xs mr-1.5 ${loading ? 'fa-spin' : ''}`}></i>
-                <span>Refresh</span>
+                <i className={`fa-solid fa-arrows-rotate text-xs mr-1.5 text-cyan-200 ${isRefreshing ? 'fa-spin' : ''}`}></i>
+                <span>{isRefreshing ? 'Menyinkronkan...' : 'Refresh'}</span>
               </button>
 
               <button
